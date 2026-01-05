@@ -1,0 +1,113 @@
+import graphene
+from django.db import IntegrityError
+from django.utils import timezone
+from graphene_django import DjangoObjectType
+
+from .models import Habit, CheckIn
+from habits.services import habit_stats
+
+
+class HabitType(DjangoObjectType):
+    total_checkins = graphene.Int()
+    checked_in_today = graphene.Boolean()
+    last_7_days_count = graphene.Int()
+    current_streak = graphene.Int()
+    best_streak = graphene.Int()
+
+    class Meta:
+        model = Habit
+        fields = ("id", "name", "description", "is_active", "created_at", "checkins")
+
+    def resolve_total_checkins(self, info):
+        return habit_stats.total_checkins(self)
+    
+    def resolve_checked_in_today(self, info):
+        return habit_stats.checked_in_today(self)
+    
+    def resolve_last_7_days_count(self, info):
+        return habit_stats.last_7_days_count(self)
+    
+    def resolve_current_streak(self, info):
+        return habit_stats.current_streak(self)
+    
+    def resolve_best_streak(self, info):
+        return habit_stats.best_streak(self)
+
+
+class CheckInType(DjangoObjectType):
+    class Meta:
+        model = CheckIn
+        fields = ("id", "habit", "date", "created_at")
+
+
+
+class Query(graphene.ObjectType):
+    habits = graphene.List(HabitType, active_only=graphene.Boolean(required=False))
+    habit = graphene.Field(HabitType, id=graphene.ID(required=True))
+
+    def resolve_habits(self, info, active_only=None):
+        qs = Habit.objects.all().order_by("name")
+        if active_only is True:
+            qs = qs.filter(is_active=True)
+        
+        qs = habit_stats.with_habit_stats(qs).prefetch_related("checkins")
+        return qs
+    
+    def resolve_habit(self, info, id):
+        qs = habit_stats.with_habit_stats(Habit.objects.all()).prefetch_related("checkins")
+        return qs.get(pk=id)
+    
+
+
+class CreateHabit(graphene.Mutation):
+    class Arguments:
+        name = graphene.String(required=True)
+        description = graphene.String(required=False)
+
+    habit = graphene.Field(HabitType)
+
+    def mutate(self, info, name, description=""):
+        habit = Habit.objects.create(name=name, description=description or "")
+        return CreateHabit(habit=habit)
+    
+
+class ToggleHabitActive(graphene.Mutation):
+    class Arguments:
+        id = graphene.ID(required=True)
+        is_active = graphene.Boolean(required=True)
+
+    habit = graphene.Field(HabitType)
+
+    def mutate(self, info, id, is_active):
+        habit = Habit.objects.get(pk=id)
+        habit.is_active = is_active
+        habit.save(update_fields=["is_active"])
+        return ToggleHabitActive(habit=habit)
+    
+
+class CheckInToday(graphene.Mutation):
+    class Arguments:
+        habit_id = graphene.ID(required=True)
+        date = graphene.Date(required=False)
+
+    checkin = graphene.Field(CheckInType)
+    created = graphene.Boolean()
+
+    def mutate(self, info, habit_id, date=None):
+        habit = Habit.objects.get(pk=habit_id)
+        checkin_date = date or timezone.localdate()
+
+        try:
+            checkin = CheckIn.objects.create(habit=habit, date=checkin_date)
+            return CheckInToday(checkin=checkin, created=True)
+        except IntegrityError:
+            # unique constraint hit: already checked in for that day
+            checkin = CheckIn.objects.get(habit=habit, date=checkin_date)
+            return CheckInToday(checkin=checkin, created=False)
+        
+
+    
+class Mutation(graphene.ObjectType):
+    created_habit = CreateHabit.Field()
+    toggle_habit_active = ToggleHabitActive.Field()
+    check_in_today = CheckInToday.Field()
