@@ -106,8 +106,21 @@ class CheckInToday(graphene.Mutation):
             return CheckInToday(checkin=checkin, created=False)
         
 
+class DeleteHabit(graphene.Mutation):
+    class Arguments:
+        id = graphene.ID(required=True)
+
+    ok = graphene.Boolean(required=True)
+    deleted_id = graphene.ID(required=True)
+
+    def mutate(self, info, id):
+        habit = Habit.objects.get(pk=id)
+        habit.delete()
+        return DeleteHabit(ok=True, deleted_id=id)
+
     
 class Mutation(graphene.ObjectType):
-    created_habit = CreateHabit.Field()
+    create_habit = CreateHabit.Field()
     toggle_habit_active = ToggleHabitActive.Field()
     check_in_today = CheckInToday.Field()
+    delete_habit = DeleteHabit.Field()

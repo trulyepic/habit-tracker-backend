@@ -16,8 +16,14 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from graphene_django.views import GraphQLView
+
+@method_decorator(csrf_exempt, name="dispatch")
+class PublicGraphQLView(GraphQLView):
+    pass
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
