@@ -91,19 +91,21 @@ class CheckInToday(graphene.Mutation):
         date = graphene.Date(required=False)
 
     checkin = graphene.Field(CheckInType)
-    created = graphene.Boolean()
+    created = graphene.Boolean(required=True)
+    habit = graphene.Field(HabitType)
 
-    def mutate(self, info, habit_id, date=None):
+    @classmethod
+    def mutate(cls, root, info, habit_id, date=None):
         habit = Habit.objects.get(pk=habit_id)
         checkin_date = date or timezone.localdate()
 
         try:
             checkin = CheckIn.objects.create(habit=habit, date=checkin_date)
-            return CheckInToday(checkin=checkin, created=True)
+            return cls(checkin=checkin, created=True, habit=habit)
         except IntegrityError:
-            # unique constraint hit: already checked in for that day
             checkin = CheckIn.objects.get(habit=habit, date=checkin_date)
-            return CheckInToday(checkin=checkin, created=False)
+            return cls(checkin=checkin, created=False, habit=habit)
+
         
 
 class DeleteHabit(graphene.Mutation):
