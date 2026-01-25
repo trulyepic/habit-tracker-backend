@@ -1,4 +1,6 @@
 import graphene
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from django.db import IntegrityError
 from django.utils import timezone
 from graphene_django import DjangoObjectType
@@ -41,12 +43,23 @@ class CheckInType(DjangoObjectType):
 
 
 
+class UserType(DjangoObjectType):
+    class Meta:
+        model = get_user_model()
+        fields = ("id", "username", "email")
+
+
 class Query(graphene.ObjectType):
+    me = graphene.Field(UserType)
     habits = graphene.List(HabitType, active_only=graphene.Boolean(required=False))
     habit = graphene.Field(HabitType, id=graphene.ID(required=True))
 
     def resolve_habits(self, info, active_only=None):
-        qs = Habit.objects.all().order_by("name")
+        user = info.context.user
+        if user.is_anonymous:
+            return Habit.objects.none()
+
+        qs = Habit.objects.filter(owner=user).order_by("name")
         if active_only is True:
             qs = qs.filter(is_active=True)
         
@@ -54,8 +67,18 @@ class Query(graphene.ObjectType):
         return qs
     
     def resolve_habit(self, info, id):
-        qs = habit_stats.with_habit_stats(Habit.objects.all()).prefetch_related("checkins")
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception("Authentication required")
+
+        qs = habit_stats.with_habit_stats(
+            Habit.objects.filter(owner=user)
+        ).prefetch_related("checkins")
         return qs.get(pk=id)
+
+    def resolve_me(self, info):
+        user = info.context.user
+        return None if user.is_anonymous else user
     
 
 
@@ -67,7 +90,11 @@ class CreateHabit(graphene.Mutation):
     habit = graphene.Field(HabitType)
 
     def mutate(self, info, name, description=""):
-        habit = Habit.objects.create(name=name, description=description or "")
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception("Authentication required")
+
+        habit = Habit.objects.create(owner=user, name=name, description=description or "")
         return CreateHabit(habit=habit)
     
 
@@ -79,7 +106,7 @@ class ToggleHabitActive(graphene.Mutation):
     habit = graphene.Field(HabitType)
 
     def mutate(self, info, id, is_active):
-        habit = Habit.objects.get(pk=id)
+        habit = Habit.objects.get(pk=id, owner=info.context.user)
         habit.is_active = is_active
         habit.save(update_fields=["is_active"])
         return ToggleHabitActive(habit=habit)
@@ -96,7 +123,10 @@ class CheckInToday(graphene.Mutation):
 
     @classmethod
     def mutate(cls, root, info, habit_id, date=None):
-        habit = Habit.objects.get(pk=habit_id)
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception("Authentication required")
+        habit = Habit.objects.get(pk=habit_id, owner=user)
         checkin_date = date or timezone.localdate()
 
         try:
@@ -116,7 +146,11 @@ class DeleteHabit(graphene.Mutation):
     deleted_id = graphene.ID(required=True)
 
     def mutate(self, info, id):
-        habit = Habit.objects.get(pk=id)
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception("Authentication required")
+
+        habit = Habit.objects.get(pk=id, owner=user)
         habit.delete()
         return DeleteHabit(ok=True, deleted_id=id)
 
