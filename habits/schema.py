@@ -1,12 +1,12 @@
 import graphene
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import User
 from django.db import IntegrityError
 from django.utils import timezone
 from graphene_django import DjangoObjectType
 
-from .models import Habit, CheckIn
+from .models import Habit, CheckIn, PlayerProfile
 from habits.services import habit_stats
+from .services.gamification import apply_checkin_reward, reconcile_profile_from_history
 
 
 class HabitType(DjangoObjectType):
@@ -39,14 +39,28 @@ class HabitType(DjangoObjectType):
 class CheckInType(DjangoObjectType):
     class Meta:
         model = CheckIn
-        fields = ("id", "habit", "date", "created_at")
+        fields = ("id", "habit", "date", "created_at", "minutes_spent", "xp_awarded")
 
+
+class PlayerProfileType(DjangoObjectType):
+    class Meta:
+        model = PlayerProfile
+        fields = ("total_xp", "level", "total_minutes_logged", "achievements_unlocked")
 
 
 class UserType(DjangoObjectType):
+    player_profile = graphene.Field(PlayerProfileType)
+
     class Meta:
         model = get_user_model()
         fields = ("id", "username", "email")
+
+    def resolve_player_profile(self, info):
+        user = info.context.user
+        if user.is_anonymous:
+            return None
+        profile = reconcile_profile_from_history(user=user)
+        return profile
 
 
 class Query(graphene.ObjectType):
@@ -116,25 +130,54 @@ class CheckInToday(graphene.Mutation):
     class Arguments:
         habit_id = graphene.ID(required=True)
         date = graphene.Date(required=False)
+        minutes_spent = graphene.Int(required=False)
 
     checkin = graphene.Field(CheckInType)
     created = graphene.Boolean(required=True)
     habit = graphene.Field(HabitType)
+    profile = graphene.Field(PlayerProfileType)
 
     @classmethod
-    def mutate(cls, root, info, habit_id, date=None):
+    def mutate(cls, root, info, habit_id, date=None, minutes_spent=None):
         user = info.context.user
         if user.is_anonymous:
             raise Exception("Authentication required")
+
         habit = Habit.objects.get(pk=habit_id, owner=user)
         checkin_date = date or timezone.localdate()
 
-        try:
-            checkin = CheckIn.objects.create(habit=habit, date=checkin_date)
-            return cls(checkin=checkin, created=True, habit=habit)
-        except IntegrityError:
-            checkin = CheckIn.objects.get(habit=habit, date=checkin_date)
-            return cls(checkin=checkin, created=False, habit=habit)
+        checkin, created = CheckIn.objects.get_or_create(
+            habit=habit,
+            date=checkin_date,
+            defaults={"minutes_spent": minutes_spent}
+        )
+
+        # If it already existed, do NOT double-award XP or overwrite minutes
+        if not created:
+            profile, _ = PlayerProfile.objects.get_or_create(user=user)
+            return cls(checkin=checkin, created=False, habit=habit, profile=profile)
+
+        # Newly created: award XP + minutes + achievements
+        # ensure minutes is set for the created checkin (defaults handled, but keep safe)
+        if minutes_spent is not None and checkin.minutes_spent != minutes_spent:
+            checkin.minutes_spent = minutes_spent
+            checkin.save(update_fields=["minutes_spent"])
+
+        # streak uses existing habit_stats logic (prefetch not required here)
+        streak = habit_stats.current_streak(habit)
+
+        # total checkins for users (for first_step achievement)
+        total_for_user = CheckIn.objects.filter(habit__owner=user).count()
+
+        profile = apply_checkin_reward(
+            user=user,
+            checkin=checkin,
+            current_streak=streak,
+            total_checkins_for_user=total_for_user
+        )
+
+        return cls(checkin=checkin, created=True, habit=habit, profile=profile)
+
 
         
 

@@ -4,6 +4,22 @@ from typing import TYPE_CHECKING
 from django.conf import settings
 from django.db import models
 
+
+class PlayerProfile(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='player_profile',
+    )
+    total_xp = models.PositiveIntegerField(default=0)
+    level = models.PositiveIntegerField(default=1)
+    total_minutes_logged = models.PositiveIntegerField(default=0)
+    achievements_unlocked = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class Habit(models.Model):
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -33,6 +49,8 @@ class CheckIn(models.Model):
                               related_name="checkins")
     date = models.DateField()
     created_at = models.DateTimeField(auto_now_add=True)
+    minutes_spent = models.PositiveIntegerField(null=True, blank=True)
+    xp_awarded = models.PositiveIntegerField(default=0)
 
     class Meta:
         constraints = [
