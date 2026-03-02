@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.db import transaction
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
 from habits.models import Habit, PlayerProfile
@@ -103,6 +104,16 @@ def get_daily_quest_chain(*, user, profile: PlayerProfile | None = None, at_date
     completion_pct = round((completed_count / total_count) * 100) if total_count else 0
     is_complete = completed_count == total_count
     reward_claimed = claimed_record is not None
+    reward_claimed_at = None
+    reward_awarded_xp = 0
+    if reward_claimed:
+        if isinstance(claimed_record, dict):
+            raw_claimed_at = claimed_record.get("claimed_at")
+            reward_claimed_at = parse_datetime(raw_claimed_at) if isinstance(raw_claimed_at, str) else None
+            reward_awarded_xp = int(claimed_record.get("awarded_xp") or DAILY_QUEST_REWARD_XP)
+        else:
+            # Backward-compatible for older claim records.
+            reward_awarded_xp = DAILY_QUEST_REWARD_XP
 
     return {
         "date_key": today_key,
@@ -114,6 +125,8 @@ def get_daily_quest_chain(*, user, profile: PlayerProfile | None = None, at_date
         "reward_xp": DAILY_QUEST_REWARD_XP,
         "reward_claimed": reward_claimed,
         "reward_claimable": bool(is_complete and not reward_claimed),
+        "reward_claimed_at": reward_claimed_at,
+        "reward_awarded_xp": reward_awarded_xp,
     }
 
 
@@ -125,6 +138,7 @@ def claim_daily_quest_reward(*, user) -> dict:
     if chain["reward_claimed"]:
         return {
             "claimed": False,
+            "claim_reason": "already_claimed",
             "awarded_xp": 0,
             "profile": profile,
             "chain": chain,
@@ -133,6 +147,7 @@ def claim_daily_quest_reward(*, user) -> dict:
     if not chain["is_complete"]:
         return {
             "claimed": False,
+            "claim_reason": "incomplete",
             "awarded_xp": 0,
             "profile": profile,
             "chain": chain,
@@ -163,6 +178,7 @@ def claim_daily_quest_reward(*, user) -> dict:
     updated_chain = get_daily_quest_chain(user=user, profile=profile)
     return {
         "claimed": True,
+        "claim_reason": "claimed",
         "awarded_xp": DAILY_QUEST_REWARD_XP,
         "profile": profile,
         "chain": updated_chain,

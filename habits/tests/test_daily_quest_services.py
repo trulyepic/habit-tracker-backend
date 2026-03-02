@@ -38,12 +38,15 @@ def test_get_daily_quest_chain_returns_expected_shape(user):
     assert len(chain["quests"]) == 3
     assert chain["reward_xp"] > 0
     assert chain["reward_claimed"] is False
+    assert chain["reward_claimed_at"] is None
+    assert chain["reward_awarded_xp"] == 0
 
 
 def test_claim_daily_quest_reward_does_not_claim_when_incomplete(user):
     result = claim_daily_quest_reward(user=user)
 
     assert result["claimed"] is False
+    assert result["claim_reason"] == "incomplete"
     assert result["awarded_xp"] == 0
 
 
@@ -60,12 +63,19 @@ def test_claim_daily_quest_reward_awards_once_when_complete(user):
     profile.refresh_from_db()
 
     assert first["claimed"] is True
+    assert first["claim_reason"] == "claimed"
     assert first["awarded_xp"] == DAILY_QUEST_REWARD_XP
     assert profile.total_xp == DAILY_QUEST_REWARD_XP
+    assert first["chain"]["reward_claimed"] is True
+    assert first["chain"]["reward_awarded_xp"] == DAILY_QUEST_REWARD_XP
+    assert first["chain"]["reward_claimed_at"] is not None
 
     second = claim_daily_quest_reward(user=user)
     profile.refresh_from_db()
 
     assert second["claimed"] is False
+    assert second["claim_reason"] == "already_claimed"
     assert second["awarded_xp"] == 0
     assert profile.total_xp == DAILY_QUEST_REWARD_XP
+    assert second["chain"]["reward_claimed"] is True
+    assert second["chain"]["reward_awarded_xp"] == DAILY_QUEST_REWARD_XP
