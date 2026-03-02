@@ -60,6 +60,8 @@ def test_daily_quest_chain_and_claim_reward_once_via_graphql(user):
           rewardXp
           rewardClaimed
           rewardClaimable
+          rewardClaimedAt
+          rewardAwardedXp
         }
       }
     """
@@ -71,16 +73,21 @@ def test_daily_quest_chain_and_claim_reward_once_via_graphql(user):
     assert chain["rewardClaimed"] is False
     assert chain["rewardClaimable"] is True
     assert chain["rewardXp"] == DAILY_QUEST_REWARD_XP
+    assert chain["rewardClaimedAt"] is None
+    assert chain["rewardAwardedXp"] == 0
 
     claim_mutation = """
       mutation {
         claimDailyQuestReward {
           claimed
+          claimReason
           awardedXp
           chain {
             rewardClaimed
             rewardClaimable
             rewardXp
+            rewardClaimedAt
+            rewardAwardedXp
           }
           profile {
             totalXp
@@ -93,16 +100,22 @@ def test_daily_quest_chain_and_claim_reward_once_via_graphql(user):
     assert "errors" not in first_claim, first_claim.get("errors")
     first_data = first_claim["data"]["claimDailyQuestReward"]
     assert first_data["claimed"] is True
+    assert first_data["claimReason"] == "claimed"
     assert first_data["awardedXp"] == DAILY_QUEST_REWARD_XP
     assert first_data["chain"]["rewardClaimed"] is True
     assert first_data["chain"]["rewardClaimable"] is False
+    assert first_data["chain"]["rewardClaimedAt"] is not None
+    assert first_data["chain"]["rewardAwardedXp"] == DAILY_QUEST_REWARD_XP
     assert first_data["profile"]["totalXp"] == DAILY_QUEST_REWARD_XP
 
     second_claim = _post_graphql(client, claim_mutation)
     assert "errors" not in second_claim, second_claim.get("errors")
     second_data = second_claim["data"]["claimDailyQuestReward"]
     assert second_data["claimed"] is False
+    assert second_data["claimReason"] == "already_claimed"
     assert second_data["awardedXp"] == 0
+    assert second_data["chain"]["rewardClaimed"] is True
+    assert second_data["chain"]["rewardAwardedXp"] == DAILY_QUEST_REWARD_XP
     assert second_data["profile"]["totalXp"] == DAILY_QUEST_REWARD_XP
 
 

@@ -74,6 +74,8 @@ class DailyQuestChainType(graphene.ObjectType):
     reward_xp = graphene.Int(required=True)
     reward_claimed = graphene.Boolean(required=True)
     reward_claimable = graphene.Boolean(required=True)
+    reward_claimed_at = graphene.DateTime()
+    reward_awarded_xp = graphene.Int(required=True)
 
 
 class PlayerProfileType(DjangoObjectType):
@@ -400,6 +402,7 @@ class DeleteHabit(graphene.Mutation):
 
 class ClaimDailyQuestReward(graphene.Mutation):
     claimed = graphene.Boolean(required=True)
+    claim_reason = graphene.String(required=True)
     awarded_xp = graphene.Int(required=True)
     chain = graphene.Field(DailyQuestChainType)
     profile = graphene.Field(PlayerProfileType)
@@ -413,6 +416,7 @@ class ClaimDailyQuestReward(graphene.Mutation):
         result = claim_daily_quest_reward(user=user)
         return cls(
             claimed=result["claimed"],
+            claim_reason=result["claim_reason"],
             awarded_xp=result["awarded_xp"],
             chain=result["chain"],
             profile=result["profile"],
