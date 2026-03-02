@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 import pytest
 from django.utils import timezone
 
@@ -78,3 +79,39 @@ def test_check_in_today_duplicate_does_not_double_award_xp(client, user):
 
     assert second["profile"]["totalXp"] == first["profile"]["totalXp"]
     assert second["profile"]["totalMinutesLogged"] == first["profile"]["totalMinutesLogged"]
+
+
+def test_check_in_today_upgrades_freeze_protected_entry(client, user):
+    assert client.login(username="u1", password="pass12345")
+
+    habit = Habit.objects.create(owner=user, name="FreezeUpgraded")
+    today = timezone.localdate()
+    yesterday = today - timedelta(days=1)
+    habit.checkins.create(date=yesterday)
+
+    freeze_mutation = """
+      mutation($habitId: ID!) {
+        consumeStreakFreeze(habitId: $habitId) {
+          consumed
+          reason
+        }
+      }
+    """
+    freeze = _post_graphql(client, freeze_mutation, {"habitId": str(habit.id)})["consumeStreakFreeze"]
+    assert freeze["consumed"] is True
+
+    checkin_mutation = """
+      mutation($habitId: ID!, $m: Int) {
+        checkInToday(habitId: $habitId, minutesSpent: $m) {
+          created
+          checkin { xpAwarded }
+        }
+      }
+    """
+    upgraded = _post_graphql(client, checkin_mutation, {"habitId": str(habit.id), "m": 20})["checkInToday"]
+    habit.refresh_from_db()
+    today_checkin = habit.checkins.get(date=today)
+
+    assert upgraded["created"] is True
+    assert upgraded["checkin"]["xpAwarded"] > 0
+    assert today_checkin.used_freeze is False

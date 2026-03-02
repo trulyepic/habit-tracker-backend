@@ -9,6 +9,12 @@ from habits.services import habit_stats
 from .services.gamification import apply_checkin_reward, reconcile_profile_from_history
 from habits.services.daily_quests import claim_daily_quest_reward, get_daily_quest_chain
 from habits.services.titles import resolve_title_state
+from habits.services.streaks import (
+    claim_recovery_quest_reward,
+    consume_streak_freeze,
+    maybe_start_recovery_quest,
+    recovery_quest_status,
+)
 
 
 class HabitType(DjangoObjectType):
@@ -17,6 +23,7 @@ class HabitType(DjangoObjectType):
     last_7_days_count = graphene.Int()
     current_streak = graphene.Int()
     best_streak = graphene.Int()
+    used_freeze_today = graphene.Boolean()
 
     class Meta:
         model = Habit
@@ -36,6 +43,9 @@ class HabitType(DjangoObjectType):
     
     def resolve_best_streak(self, info):
         return habit_stats.best_streak(self)
+
+    def resolve_used_freeze_today(self, info):
+        return habit_stats.used_freeze_today(self)
 
 
 class CheckInType(DjangoObjectType):
@@ -74,10 +84,18 @@ class PlayerProfileType(DjangoObjectType):
     next_title_missing_achievements = graphene.List(graphene.String)
     is_max_title = graphene.Boolean()
     unlocked_titles = graphene.List(lambda: TitleType)
+    streak_freeze_charges = graphene.Int()
+    recovery_quest = graphene.Field(lambda: RecoveryQuestType)
 
     class Meta:
         model = PlayerProfile
-        fields = ("total_xp", "level", "total_minutes_logged", "achievements_unlocked")
+        fields = (
+            "total_xp",
+            "level",
+            "total_minutes_logged",
+            "achievements_unlocked",
+            "streak_freeze_charges",
+        )
 
     @staticmethod
     def _title_state_for_profile(profile):
@@ -108,6 +126,10 @@ class PlayerProfileType(DjangoObjectType):
     def resolve_unlocked_titles(self, info):
         return PlayerProfileType._title_state_for_profile(self)["unlocked_titles"]
 
+    def resolve_recovery_quest(self, info):
+        user = info.context.user
+        return recovery_quest_status(user=user, profile=self)
+
 
 class TitleType(graphene.ObjectType):
     key = graphene.String(required=True)
@@ -116,6 +138,17 @@ class TitleType(graphene.ObjectType):
     flavor = graphene.String(required=True)
     min_level = graphene.Int(required=True)
     required_achievements = graphene.List(graphene.String, required=True)
+
+
+class RecoveryQuestType(graphene.ObjectType):
+    active = graphene.Boolean(required=True)
+    start_date = graphene.String()
+    progress_days = graphene.Int(required=True)
+    target_days = graphene.Int(required=True)
+    complete = graphene.Boolean(required=True)
+    claimed = graphene.Boolean(required=True)
+    reward_xp = graphene.Int(required=True)
+    claimable = graphene.Boolean(required=True)
 
 
 class UserType(DjangoObjectType):
@@ -130,6 +163,8 @@ class UserType(DjangoObjectType):
         if user.is_anonymous:
             return None
         profile = reconcile_profile_from_history(user=user)
+        if maybe_start_recovery_quest(user=user, profile=profile):
+            profile.save(update_fields=["recovery_quest_started_on", "updated_at"])
         return profile
 
 
@@ -229,6 +264,25 @@ class CheckInToday(graphene.Mutation):
             defaults={"minutes_spent": minutes_spent}
         )
 
+        # If today was protected by freeze, "upgrade" it to a real check-in and award XP.
+        if not created and checkin.used_freeze:
+            checkin.used_freeze = False
+            if minutes_spent is not None:
+                checkin.minutes_spent = minutes_spent
+                checkin.save(update_fields=["used_freeze", "minutes_spent"])
+            else:
+                checkin.save(update_fields=["used_freeze"])
+
+            streak = habit_stats.current_streak(habit)
+            total_for_user = CheckIn.objects.filter(habit__owner=user, used_freeze=False).count()
+            profile = apply_checkin_reward(
+                user=user,
+                checkin=checkin,
+                current_streak=streak,
+                total_checkins_for_user=total_for_user,
+            )
+            return cls(checkin=checkin, created=True, habit=habit, profile=profile)
+
         # If it already existed, do NOT double-award XP or overwrite minutes
         if not created:
             profile, _ = PlayerProfile.objects.get_or_create(user=user)
@@ -244,7 +298,7 @@ class CheckInToday(graphene.Mutation):
         streak = habit_stats.current_streak(habit)
 
         # total checkins for users (for first_step achievement)
-        total_for_user = CheckIn.objects.filter(habit__owner=user).count()
+        total_for_user = CheckIn.objects.filter(habit__owner=user, used_freeze=False).count()
 
         profile = apply_checkin_reward(
             user=user,
@@ -296,9 +350,56 @@ class ClaimDailyQuestReward(graphene.Mutation):
         )
 
 
+class ConsumeStreakFreeze(graphene.Mutation):
+    consumed = graphene.Boolean(required=True)
+    reason = graphene.String()
+    habit = graphene.Field(HabitType)
+    profile = graphene.Field(PlayerProfileType)
+
+    class Arguments:
+        habit_id = graphene.ID(required=True)
+
+    @classmethod
+    def mutate(cls, root, info, habit_id):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception("Authentication required")
+
+        result = consume_streak_freeze(user=user, habit_id=habit_id)
+        return cls(
+            consumed=result["consumed"],
+            reason=result["reason"],
+            habit=result["habit"],
+            profile=result["profile"],
+        )
+
+
+class ClaimRecoveryQuestReward(graphene.Mutation):
+    claimed = graphene.Boolean(required=True)
+    awarded_xp = graphene.Int(required=True)
+    profile = graphene.Field(PlayerProfileType)
+    recovery_quest = graphene.Field(RecoveryQuestType)
+
+    @classmethod
+    def mutate(cls, root, info):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception("Authentication required")
+
+        result = claim_recovery_quest_reward(user=user)
+        return cls(
+            claimed=result["claimed"],
+            awarded_xp=result["awarded_xp"],
+            profile=result["profile"],
+            recovery_quest=result["recovery_quest"],
+        )
+
+
 class Mutation(graphene.ObjectType):
     create_habit = CreateHabit.Field()
     toggle_habit_active = ToggleHabitActive.Field()
     check_in_today = CheckInToday.Field()
     delete_habit = DeleteHabit.Field()
     claim_daily_quest_reward = ClaimDailyQuestReward.Field()
+    consume_streak_freeze = ConsumeStreakFreeze.Field()
+    claim_recovery_quest_reward = ClaimRecoveryQuestReward.Field()

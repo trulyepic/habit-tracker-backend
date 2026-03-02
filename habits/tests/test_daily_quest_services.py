@@ -4,7 +4,7 @@ import pytest
 from django.utils import timezone
 
 from habits.models import Habit, CheckIn, PlayerProfile
-from habits.services.daily_quests import claim_daily_quest_reward, get_daily_quest_chain
+from habits.services.daily_quests import DAILY_QUEST_REWARD_XP, claim_daily_quest_reward, get_daily_quest_chain
 
 
 pytestmark = pytest.mark.django_db
@@ -60,12 +60,12 @@ def test_claim_daily_quest_reward_awards_once_when_complete(user):
     profile.refresh_from_db()
 
     assert first["claimed"] is True
-    assert first["awarded_xp"] == 60
-    assert profile.total_xp == 60
+    assert first["awarded_xp"] == DAILY_QUEST_REWARD_XP
+    assert profile.total_xp == DAILY_QUEST_REWARD_XP
 
     second = claim_daily_quest_reward(user=user)
     profile.refresh_from_db()
 
     assert second["claimed"] is False
     assert second["awarded_xp"] == 0
-    assert profile.total_xp == 60
+    assert profile.total_xp == DAILY_QUEST_REWARD_XP

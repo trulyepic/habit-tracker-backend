@@ -1,11 +1,10 @@
 from habits.services.daily_quests.types import DailyQuestDef, DailyQuestProgress
+from habits.services.game_balance import DAILY_QUEST_REWARD_XP
 
 
 def _clamp_min_one(n: int) -> int:
     return max(1, int(round(n)))
 
-
-DAILY_QUEST_REWARD_XP = 60
 
 # Pool for deterministic daily rotation. Same date => same 3 objectives.
 DAILY_QUEST_POOL: tuple[DailyQuestDef, ...] = (

@@ -9,6 +9,8 @@ from habits.models import Habit, PlayerProfile
 from habits.services.daily_quests.catalog import DAILY_QUEST_POOL, DAILY_QUEST_REWARD_XP
 from habits.services.daily_quests.types import DailyQuestContext, DailyQuestDef
 from habits.services.gamification import level_from_xp
+from habits.services.game_balance import MAX_FREEZE_CHARGES
+from habits.services.streaks import maybe_grant_level_freezes
 
 
 def _date_key(d=None) -> str:
@@ -44,7 +46,7 @@ def _context_for_user(*, user, level: int) -> DailyQuestContext:
     active_with_streak_3 = 0
 
     for habit in active_habits:
-        dates = list(habit.checkins.values_list("date", flat=True))
+        dates = list(habit.checkins.filter(used_freeze=False).values_list("date", flat=True))
         today = timezone.localdate()
         date_set = set(dates)
 
@@ -144,8 +146,19 @@ def claim_daily_quest_reward(*, user) -> dict:
 
     profile.total_xp += DAILY_QUEST_REWARD_XP
     profile.level = level_from_xp(profile.total_xp)
+    profile.streak_freeze_charges = min(MAX_FREEZE_CHARGES, int(profile.streak_freeze_charges or 0) + 1)
+    maybe_grant_level_freezes(profile=profile)
     profile.daily_quest_claims = claims
-    profile.save(update_fields=["total_xp", "level", "daily_quest_claims", "updated_at"])
+    profile.save(
+        update_fields=[
+            "total_xp",
+            "level",
+            "daily_quest_claims",
+            "streak_freeze_charges",
+            "freeze_milestones_claimed",
+            "updated_at",
+        ]
+    )
 
     updated_chain = get_daily_quest_chain(user=user, profile=profile)
     return {

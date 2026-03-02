@@ -13,6 +13,14 @@ from habits.services.achievements import (
     evaluate_new_unlocks,
     total_bonus_xp_for_keys,
 )
+from habits.services.game_balance import (
+    CHECKIN_BASE_XP,
+    CHECKIN_MINUTES_BONUS_CAP,
+    CHECKIN_MINUTES_BONUS_PER,
+    CHECKIN_STREAK_BONUS_CAP,
+    CHECKIN_STREAK_BONUS_PER_DAY,
+)
+from habits.services.streaks import maybe_grant_level_freezes, maybe_start_recovery_quest
 
 
 @dataclass(frozen=True)
@@ -68,14 +76,17 @@ def compute_xp_award(
         current_streak: int,
         minutes_spent: Optional[int],
 ) -> XPAwardBreakdown:
-    base = 10
-    streak_bonus = min(2 * max(current_streak, 0), 20)
+    base = CHECKIN_BASE_XP
+    streak_bonus = min(
+        CHECKIN_STREAK_BONUS_PER_DAY * max(current_streak, 0),
+        CHECKIN_STREAK_BONUS_CAP,
+    )
 
     if minutes_spent is None:
         minutes_bonus = 0
     else:
-        #  +1 XP per 10 minutes, cap at +30
-        minutes_bonus = min(minutes_spent // 10, 30)
+        # +1 XP per configured minute bucket, capped by configured limit.
+        minutes_bonus = min(minutes_spent // CHECKIN_MINUTES_BONUS_PER, CHECKIN_MINUTES_BONUS_CAP)
 
     return XPAwardBreakdown(base=base, streak_bonus=streak_bonus, minutes_bonus=minutes_bonus)
 
@@ -126,15 +137,19 @@ def apply_checkin_reward(
     profile.level = level_from_xp(profile.total_xp)
 
     profile.achievements_unlocked = unlocked
-    profile.save(
-        update_fields=[
-            "total_xp",
-            "level",
-            "total_minutes_logged",
-            "achievements_unlocked",
-            "updated_at",
-        ]
-    )
+    update_fields = [
+        "total_xp",
+        "level",
+        "total_minutes_logged",
+        "achievements_unlocked",
+        "updated_at",
+    ]
+    if maybe_grant_level_freezes(profile=profile):
+        update_fields.extend(["streak_freeze_charges", "freeze_milestones_claimed"])
+    maybe_start_recovery_quest(user=user, profile=profile)
+    if "recovery_quest_started_on" not in update_fields:
+        update_fields.append("recovery_quest_started_on")
+    profile.save(update_fields=update_fields)
 
     return profile
 
@@ -179,8 +194,6 @@ def reconcile_profile_from_history(*, user) -> PlayerProfile:
         profile.save(update_fields=["total_minutes_logged", "achievements_unlocked", "updated_at"])
 
     return profile
-
-
 
 
 

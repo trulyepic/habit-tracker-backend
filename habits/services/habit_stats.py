@@ -18,6 +18,7 @@ def with_habit_stats(qs):
     start = today - timedelta(days=6)
 
     today_checkin_exists = CheckIn.objects.filter(habit_id=OuterRef("pk"), date=today)
+    today_freeze_exists = CheckIn.objects.filter(habit_id=OuterRef("pk"), date=today, used_freeze=True)
 
     return qs.annotate(
         total_checkins_anno=Count("checkins", distinct=True),
@@ -27,6 +28,7 @@ def with_habit_stats(qs):
             distinct=True,
         ),
         checked_in_today_anno=Exists(today_checkin_exists),
+        used_freeze_today_anno=Exists(today_freeze_exists),
     )
 
 def _prefetched_checkin_dates_or_none(habit):
@@ -67,6 +69,14 @@ def last_7_days_count(habit: Habit) -> int:
     today = timezone.localdate()
     start = today - timedelta(days=6)
     return habit.checkins.filter(date__range=(start, today)).count()
+
+
+def used_freeze_today(habit: Habit) -> bool:
+    val = getattr(habit, "used_freeze_today_anno", None)
+    if val is not None:
+        return bool(val)
+    today = timezone.localdate()
+    return habit.checkins.filter(date=today, used_freeze=True).exists()
 
 
 def current_streak(habit: Habit) -> int:

@@ -16,6 +16,10 @@ class PlayerProfile(models.Model):
     total_minutes_logged = models.PositiveIntegerField(default=0)
     achievements_unlocked = models.JSONField(default=dict, blank=True)
     daily_quest_claims = models.JSONField(default=dict, blank=True)
+    streak_freeze_charges = models.PositiveSmallIntegerField(default=1)
+    freeze_milestones_claimed = models.PositiveSmallIntegerField(default=0)
+    recovery_quest_started_on = models.DateField(null=True, blank=True)
+    recovery_quest_claimed_on = models.DateField(null=True, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -52,6 +56,7 @@ class CheckIn(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     minutes_spent = models.PositiveIntegerField(null=True, blank=True)
     xp_awarded = models.PositiveIntegerField(default=0)
+    used_freeze = models.BooleanField(default=False)
 
     class Meta:
         constraints = [
