@@ -15,6 +15,7 @@ class PlayerProfile(models.Model):
     level = models.PositiveIntegerField(default=1)
     total_minutes_logged = models.PositiveIntegerField(default=0)
     achievements_unlocked = models.JSONField(default=dict, blank=True)
+    daily_quest_claims = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

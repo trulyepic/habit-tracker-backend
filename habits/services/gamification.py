@@ -8,7 +8,11 @@ from django.db import transaction
 
 from habits.models import CheckIn, PlayerProfile, Habit
 from habits.services import habit_stats
-from habits.services.habit_stats import total_checkins
+from habits.services.achievements import (
+    build_context,
+    evaluate_new_unlocks,
+    total_bonus_xp_for_keys,
+)
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,24 @@ class XPAwardBreakdown:
     @property
     def total(self):
         return self.base + self.streak_bonus + self.minutes_bonus
+
+
+def award_achievement_bonus_xp(*, profile, checkin, newly_unlocked_keys) -> int:
+    """
+    Adds bonus XP for newly unlocked achievements.
+    - profile.total_xp increases (affects level)
+    - checkin.xp_awarded increases (so the check-in reward reflects it)
+    Returns the total bonus XP added.
+    """
+    total_bonus = total_bonus_xp_for_keys(newly_unlocked_keys)
+
+    if total_bonus > 0:
+        profile.total_xp += total_bonus
+
+        # Attribute the bonus to the triggering check-in for audit/UX.
+        checkin.xp_awarded += total_bonus
+        checkin.save(update_fields=["xp_awarded"])
+    return total_bonus
 
 
 def level_from_xp(total_xp: int) -> int:
@@ -59,7 +81,13 @@ def compute_xp_award(
 
 
 @transaction.atomic
-def apply_checkin_reward( *, user, checkin: CheckIn, current_streak: int, total_checkins_for_user: int ) -> PlayerProfile:
+def apply_checkin_reward(
+    *,
+    user,
+    checkin: CheckIn,
+    current_streak: int,
+    total_checkins_for_user: int,
+) -> PlayerProfile:
     profile, _ = PlayerProfile.objects.select_for_update().get_or_create(user=user)
 
     breakdown = compute_xp_award(
@@ -67,35 +95,46 @@ def apply_checkin_reward( *, user, checkin: CheckIn, current_streak: int, total_
         minutes_spent=checkin.minutes_spent,
     )
 
-    # persist awarded XP for audit/history
+    # Persist awarded XP for audit/history (base + streak + minutes)
     checkin.xp_awarded = breakdown.total
     checkin.save(update_fields=["xp_awarded"])
 
+    # Apply XP + minutes to profile
     profile.total_xp += breakdown.total
     if checkin.minutes_spent:
         profile.total_minutes_logged += checkin.minutes_spent
+
+    now_iso = timezone.now().isoformat()
+    unlocked, newly_unlocked = evaluate_new_unlocks(
+        unlocked=profile.achievements_unlocked or {},
+        context=build_context(
+            total_checkins=total_checkins_for_user,
+            streak_days=current_streak,
+            total_minutes_logged=profile.total_minutes_logged,
+        ),
+        now_iso=now_iso,
+    )
+
+    # Award rarity-based bonus XP for newly unlocked achievements
+    award_achievement_bonus_xp(
+        profile=profile,
+        checkin=checkin,
+        newly_unlocked_keys=newly_unlocked,
+    )
+
+    # IMPORTANT: compute level after all XP is applied (including achievement bonuses)
     profile.level = level_from_xp(profile.total_xp)
 
-    unlocked = profile.achievements_unlocked or {}
-    now_iso = timezone.now().isoformat()
-
-    # Phase 1 achievements
-    if "first_step" not in unlocked and total_checkins_for_user >= 1:
-        unlocked["first_step"] = now_iso
-    if "on_fire" not in unlocked and current_streak >= 7:
-        unlocked["on_fire"] = now_iso
-    if "ten_hours" not in unlocked and profile.total_minutes_logged >= 600:
-        unlocked["ten_hours"] = now_iso
-
     profile.achievements_unlocked = unlocked
-
-    profile.save(update_fields=[
-        "total_xp",
-        "level",
-        "total_minutes_logged",
-        "achievements_unlocked",
-        "updated_at"
-    ])
+    profile.save(
+        update_fields=[
+            "total_xp",
+            "level",
+            "total_minutes_logged",
+            "achievements_unlocked",
+            "updated_at",
+        ]
+    )
 
     return profile
 
@@ -123,17 +162,16 @@ def reconcile_profile_from_history(*, user) -> PlayerProfile:
         if s > max_streak:
             max_streak = s
 
-    unlocked = dict(before_unlocked)
     now_iso = timezone.now().isoformat()
-
-    if "first_step" not in unlocked and total_checkins_for_user >= 1:
-        unlocked["first_step"] = now_iso
-
-    if "on_fire" not in unlocked and max_streak >= 7:
-        unlocked["on_fire"] = now_iso
-
-    if "ten_hours" not in unlocked and profile.total_minutes_logged >= 600:
-        unlocked["ten_hours"] = now_iso
+    unlocked, _ = evaluate_new_unlocks(
+        unlocked=before_unlocked,
+        context=build_context(
+            total_checkins=total_checkins_for_user,
+            streak_days=max_streak,
+            total_minutes_logged=profile.total_minutes_logged,
+        ),
+        now_iso=now_iso,
+    )
 
     did_change = (unlocked != before_unlocked) or (profile.total_minutes_logged != before_minutes)
     if did_change:
@@ -141,7 +179,6 @@ def reconcile_profile_from_history(*, user) -> PlayerProfile:
         profile.save(update_fields=["total_minutes_logged", "achievements_unlocked", "updated_at"])
 
     return profile
-
 
 
 

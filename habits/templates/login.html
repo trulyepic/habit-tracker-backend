@@ -30,6 +30,7 @@
         {% endif %}
 
         <form method="post" class="space-y-4">
+          <input type="hidden" name="next" value="{{ request.POST.next|default:request.GET.next|default:frontend_url }}" />
           {% csrf_token %}
 
           <div>
@@ -68,7 +69,7 @@
         </div>
 
         <div class="mt-6 text-center text-xs text-slate-400">
-          <a href="http://localhost:5173/" class="hover:underline">Back to the app</a>
+          <a href="{{ frontend_url }}" class="hover:underline">Back to the app</a>
         </div>
       </div>
     </div>

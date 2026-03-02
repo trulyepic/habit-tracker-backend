@@ -12,8 +12,18 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
-import dj_database_url
-from dotenv import load_dotenv
+from django.core.exceptions import ImproperlyConfigured
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args, **kwargs):
+        return False
+
+try:
+    import dj_database_url
+except ImportError:
+    dj_database_url = None
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -31,7 +41,11 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", ".railway.app"]
+ALLOWED_HOSTS = [
+    "localhost",
+    "127.0.0.1",
+    ".railway.app",
+]
 
 
 # Application definition
@@ -87,6 +101,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
+    if dj_database_url is None:
+        raise ImproperlyConfigured(
+            "DATABASE_URL is set but `dj-database-url` is not installed. "
+            "Install dependencies with `pip install -r requirements.txt`."
+        )
     DATABASES = {
         "default": dj_database_url.config(
             default=DATABASE_URL,
@@ -162,15 +181,14 @@ GRAPHENE = {
 # ]
 CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,
-]
-
-ALLOWED_HOSTS =[
-    "localhost",
-    "127.0.0.1",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
     FRONTEND_URL,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 # CSRF_TRUSTED_ORIGINS =[
 #     "http://localhost:5173",
@@ -178,6 +196,16 @@ CSRF_TRUSTED_ORIGINS = [
 # ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Cookie defaults:
+# - Local debug (localhost/127.0.0.1): Lax + non-secure.
+# - Non-debug deployments: None + Secure so cross-site frontend/backend works.
+default_same_site = "Lax" if DEBUG else "None"
+default_secure = "False" if DEBUG else "True"
+SESSION_COOKIE_SAMESITE = os.getenv("SESSION_COOKIE_SAMESITE", default_same_site)
+CSRF_COOKIE_SAMESITE = os.getenv("CSRF_COOKIE_SAMESITE", default_same_site)
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", default_secure).lower() == "true"
+CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", default_secure).lower() == "true"
 
 # LOGIN_REDIRECT_URL = "http://localhost:5173/"
 # LOGOUT_REDIRECT_URL = "http://localhost:5173/"

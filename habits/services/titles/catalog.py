@@ -1,0 +1,61 @@
+from habits.services.titles.types import TitleDef
+
+# Ordered from earliest to latest. Later matches override earlier ones.
+TITLE_TRACK: tuple[TitleDef, ...] = (
+    TitleDef(
+        key="rookie",
+        name="Rookie Spark",
+        emoji="✨",
+        flavor="You have begun the quest.",
+        min_level=1,
+        required_achievements=(),
+    ),
+    TitleDef(
+        key="pathfinder",
+        name="Pathfinder",
+        emoji="🧭",
+        flavor="You show up when it matters.",
+        min_level=3,
+        required_achievements=("first_step",),
+    ),
+    TitleDef(
+        key="ember_keeper",
+        name="Ember Keeper",
+        emoji="🔥",
+        flavor="Your streak is alive and growing.",
+        min_level=6,
+        required_achievements=("on_fire",),
+    ),
+    TitleDef(
+        key="time_weaver",
+        name="Time Weaver",
+        emoji="⏳",
+        flavor="You convert time into mastery.",
+        min_level=8,
+        required_achievements=("ten_hours",),
+    ),
+    TitleDef(
+        key="iron_vanguard",
+        name="Iron Vanguard",
+        emoji="🛡️",
+        flavor="Consistency has become your edge.",
+        min_level=12,
+        required_achievements=("iron_will",),
+    ),
+    TitleDef(
+        key="centurion_prime",
+        name="Centurion Prime",
+        emoji="👑",
+        flavor="A true veteran of daily discipline.",
+        min_level=16,
+        required_achievements=("centurion",),
+    ),
+    TitleDef(
+        key="legend_of_routine",
+        name="Legend of Routine",
+        emoji="🌟",
+        flavor="Master of streaks, time, and repetition.",
+        min_level=20,
+        required_achievements=("on_fire", "ten_hours", "iron_will", "centurion"),
+    ),
+)
