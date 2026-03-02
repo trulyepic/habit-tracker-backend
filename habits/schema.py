@@ -151,6 +151,17 @@ class RecoveryQuestType(graphene.ObjectType):
     claimable = graphene.Boolean(required=True)
 
 
+class ActivityEventType(graphene.ObjectType):
+    id = graphene.ID(required=True)
+    action = graphene.String(required=True)
+    habit_name = graphene.String(required=True)
+    date = graphene.Date(required=True)
+    created_at = graphene.DateTime(required=True)
+    minutes_spent = graphene.Int()
+    xp_awarded = graphene.Int(required=True)
+    used_freeze = graphene.Boolean(required=True)
+
+
 class UserType(DjangoObjectType):
     player_profile = graphene.Field(PlayerProfileType)
 
@@ -173,6 +184,7 @@ class Query(graphene.ObjectType):
     habits = graphene.List(HabitType, active_only=graphene.Boolean(required=False))
     habit = graphene.Field(HabitType, id=graphene.ID(required=True))
     daily_quest_chain = graphene.Field(DailyQuestChainType)
+    recent_activity = graphene.List(ActivityEventType, limit=graphene.Int(required=False))
 
     def resolve_habits(self, info, active_only=None):
         user = info.context.user
@@ -205,6 +217,63 @@ class Query(graphene.ObjectType):
         if user.is_anonymous:
             return None
         return get_daily_quest_chain(user=user)
+
+    def resolve_recent_activity(self, info, limit=20):
+        user = info.context.user
+        if user.is_anonymous:
+            return []
+
+        safe_limit = max(1, min(int(limit or 20), 100))
+        checkins = (
+            CheckIn.objects.filter(habit__owner=user)
+            .select_related("habit")
+            .order_by("-date", "-created_at")[:safe_limit]
+        )
+        created_habits = Habit.objects.filter(owner=user).only("id", "name", "created_at").order_by("-created_at")[:safe_limit]
+
+        events = []
+        for c in checkins:
+            events.append(
+                {
+                    "id": c.id,
+                    "action": "checkin",
+                    "habit_name": c.habit.name,
+                    "date": c.date,
+                    "created_at": c.created_at,
+                    "minutes_spent": c.minutes_spent,
+                    "xp_awarded": c.xp_awarded,
+                    "used_freeze": c.used_freeze,
+                }
+            )
+
+        for h in created_habits:
+            events.append(
+                {
+                    "id": f"habit-{h.id}",
+                    "action": "habit_created",
+                    "habit_name": h.name,
+                    "date": h.created_at.date(),
+                    "created_at": h.created_at,
+                    "minutes_spent": None,
+                    "xp_awarded": 0,
+                    "used_freeze": False,
+                }
+            )
+
+        events.sort(key=lambda e: (e["created_at"], str(e["id"])), reverse=True)
+        return [
+            {
+                "id": c["id"],
+                "action": c["action"],
+                "habit_name": c["habit_name"],
+                "date": c["date"],
+                "created_at": c["created_at"],
+                "minutes_spent": c["minutes_spent"],
+                "xp_awarded": c["xp_awarded"],
+                "used_freeze": c["used_freeze"],
+            }
+            for c in events[:safe_limit]
+        ]
     
 
 

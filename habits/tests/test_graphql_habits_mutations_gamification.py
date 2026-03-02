@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
-from habits.models import Habit
+from habits.models import CheckIn, Habit
 
 pytestmark = pytest.mark.django_db
 
@@ -115,3 +115,25 @@ def test_check_in_today_upgrades_freeze_protected_entry(client, user):
     assert upgraded["created"] is True
     assert upgraded["checkin"]["xpAwarded"] > 0
     assert today_checkin.used_freeze is False
+
+
+def test_toggle_habit_active_does_not_delete_habit_or_checkins(client, user):
+    assert client.login(username="u1", password="pass12345")
+
+    habit = Habit.objects.create(owner=user, name="Meditate")
+    checkin = CheckIn.objects.create(habit=habit, date=timezone.localdate())
+
+    mutation = """
+      mutation($id: ID!, $isActive: Boolean!) {
+        toggleHabitActive(id: $id, isActive: $isActive) {
+          habit { id isActive }
+        }
+      }
+    """
+    payload = _post_graphql(client, mutation, {"id": str(habit.id), "isActive": False})["toggleHabitActive"]
+
+    habit.refresh_from_db()
+    assert payload["habit"]["id"] == str(habit.id)
+    assert payload["habit"]["isActive"] is False
+    assert Habit.objects.filter(id=habit.id, owner=user).exists()
+    assert CheckIn.objects.filter(id=checkin.id, habit=habit).exists()
