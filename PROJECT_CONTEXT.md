@@ -14,6 +14,11 @@
 ## Runtime and Env Notes
 - `DATABASE_URL` is used for Postgres environments (Railway).
 - Local default remains SQLite when Postgres env is not set.
+- `APP_TIME_ZONE` controls the app day boundary used by:
+  - `check_in_today`
+  - daily quest reset/claim keying
+  - weekly boss reset/claim keying
+- Default app timezone is `America/Los_Angeles` if `APP_TIME_ZONE` is not set.
 - Required Python deps include:
   - `dj-database-url`
   - `python-dotenv`
@@ -87,6 +92,8 @@
 
 ## Deployment/Workflow Notes
 - Backend repo is connected to Railway for deployment updates from Git pushes.
+- Local DB mode switching runbook is maintained at:
+  - `/Users/kin/habit-tracker-main/python-cmd/shell-cmd.txt`
 - Recommended repo protection:
   - require PR before merge
   - require `Backend Tests / test` status check on `main`

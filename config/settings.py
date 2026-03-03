@@ -146,7 +146,9 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# App-wide day boundary used by reset logic (check-ins, daily quests, weekly bosses).
+# Override with APP_TIME_ZONE in environments where "today" should roll over in a different zone.
+TIME_ZONE = os.getenv("APP_TIME_ZONE", "America/Los_Angeles")
 
 USE_I18N = True
 
