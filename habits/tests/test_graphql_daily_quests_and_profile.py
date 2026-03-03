@@ -37,6 +37,23 @@ def _create_strong_habit(owner, name: str, streak_days: int = 7):
     return habit
 
 
+def _seed_weekly_progress(owner, *, active_habits=4, week_checkins=10):
+    today = timezone.localdate()
+    monday = today - timedelta(days=today.weekday())
+
+    seeded = []
+    for i in range(active_habits):
+        habit = Habit.objects.create(owner=owner, name=f"wb-strong-{i}", is_active=True)
+        seeded.append(habit)
+        for d in range(9):
+            CheckIn.objects.create(habit=habit, date=today - timedelta(days=d), minutes_spent=25)
+
+    for idx in range(week_checkins):
+        habit = seeded[idx % len(seeded)]
+        day = monday + timedelta(days=(idx % 7))
+        CheckIn.objects.get_or_create(habit=habit, date=day, defaults={"minutes_spent": 25})
+
+
 def test_daily_quest_chain_and_claim_reward_once_via_graphql(user):
     profile, _ = PlayerProfile.objects.get_or_create(user=user)
     profile.level = 12
@@ -117,6 +134,76 @@ def test_daily_quest_chain_and_claim_reward_once_via_graphql(user):
     assert second_data["chain"]["rewardClaimed"] is True
     assert second_data["chain"]["rewardAwardedXp"] == DAILY_QUEST_REWARD_XP
     assert second_data["profile"]["totalXp"] == DAILY_QUEST_REWARD_XP
+
+
+def test_weekly_boss_encounter_and_claim_reward_once_via_graphql(user):
+    profile, _ = PlayerProfile.objects.get_or_create(user=user)
+    profile.level = 15
+    profile.total_xp = 0
+    profile.save(update_fields=["level", "total_xp"])
+    _seed_weekly_progress(user)
+
+    client = Client()
+    client.force_login(user)
+
+    encounter_query = """
+      query {
+        weeklyBossEncounter {
+          weekKey
+          boss { key name rarity difficulty isWeekly }
+          completedCount
+          totalCount
+          isComplete
+          rewardXp
+          rewardClaimed
+          rewardClaimable
+          rewardClaimedAt
+        }
+      }
+    """
+    encounter_payload = _post_graphql(client, encounter_query)
+    assert "errors" not in encounter_payload, encounter_payload.get("errors")
+
+    encounter = encounter_payload["data"]["weeklyBossEncounter"]
+    assert encounter["boss"]["isWeekly"] is True
+    assert encounter["isComplete"] is True
+    assert encounter["rewardClaimed"] is False
+    assert encounter["rewardClaimable"] is True
+
+    claim_mutation = """
+      mutation {
+        claimWeeklyBossReward {
+          claimed
+          claimReason
+          awardedXp
+          encounter {
+            rewardClaimed
+            rewardClaimable
+            rewardClaimedAt
+            rewardAwardedXp
+          }
+          profile {
+            totalXp
+          }
+        }
+      }
+    """
+    first_claim = _post_graphql(client, claim_mutation)
+    assert "errors" not in first_claim, first_claim.get("errors")
+    first = first_claim["data"]["claimWeeklyBossReward"]
+    assert first["claimed"] is True
+    assert first["claimReason"] == "claimed"
+    assert first["awardedXp"] > 0
+    assert first["encounter"]["rewardClaimed"] is True
+    assert first["encounter"]["rewardClaimable"] is False
+    assert first["encounter"]["rewardClaimedAt"] is not None
+    assert first["profile"]["totalXp"] > 0
+
+    second_claim = _post_graphql(client, claim_mutation)
+    assert "errors" not in second_claim, second_claim.get("errors")
+    second = second_claim["data"]["claimWeeklyBossReward"]
+    assert second["claimed"] is False
+    assert second["claimReason"] == "already_claimed"
 
 
 def test_me_query_resolves_player_profile_title_fields_without_errors(user):

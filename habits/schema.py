@@ -8,6 +8,7 @@ from .models import Habit, CheckIn, PlayerProfile
 from habits.services import habit_stats
 from .services.gamification import apply_checkin_reward, reconcile_profile_from_history
 from habits.services.daily_quests import claim_daily_quest_reward, get_daily_quest_chain
+from habits.services.weekly_bosses import claim_weekly_boss_reward, get_weekly_boss_encounter
 from habits.services.titles import resolve_title_state
 from habits.services.streaks import (
     claim_recovery_quest_reward,
@@ -64,8 +65,45 @@ class DailyQuestObjectiveType(graphene.ObjectType):
     complete = graphene.Boolean(required=True)
 
 
+class BossBuffType(graphene.ObjectType):
+    key = graphene.String(required=True)
+    name = graphene.String(required=True)
+    description = graphene.String(required=True)
+
+
+class BossType(graphene.ObjectType):
+    key = graphene.String(required=True)
+    name = graphene.String(required=True)
+    subtitle = graphene.String(required=True)
+    icon = graphene.String(required=True)
+    tint = graphene.String(required=True)
+    rarity = graphene.String(required=True)
+    difficulty = graphene.String(required=True)
+    mechanics = graphene.List(graphene.String, required=True)
+    buffs = graphene.List(BossBuffType, required=True)
+    is_weekly = graphene.Boolean(required=True)
+
+
 class DailyQuestChainType(graphene.ObjectType):
     date_key = graphene.String(required=True)
+    boss = graphene.Field(BossType, required=True)
+    quests = graphene.List(DailyQuestObjectiveType, required=True)
+    completed_count = graphene.Int(required=True)
+    total_count = graphene.Int(required=True)
+    completion_pct = graphene.Int(required=True)
+    is_complete = graphene.Boolean(required=True)
+    reward_xp = graphene.Int(required=True)
+    reward_claimed = graphene.Boolean(required=True)
+    reward_claimable = graphene.Boolean(required=True)
+    reward_claimed_at = graphene.DateTime()
+    reward_awarded_xp = graphene.Int(required=True)
+
+
+class WeeklyBossEncounterType(graphene.ObjectType):
+    week_key = graphene.String(required=True)
+    week_start = graphene.String(required=True)
+    week_end = graphene.String(required=True)
+    boss = graphene.Field(BossType, required=True)
     quests = graphene.List(DailyQuestObjectiveType, required=True)
     completed_count = graphene.Int(required=True)
     total_count = graphene.Int(required=True)
@@ -186,6 +224,7 @@ class Query(graphene.ObjectType):
     habits = graphene.List(HabitType, active_only=graphene.Boolean(required=False))
     habit = graphene.Field(HabitType, id=graphene.ID(required=True))
     daily_quest_chain = graphene.Field(DailyQuestChainType)
+    weekly_boss_encounter = graphene.Field(WeeklyBossEncounterType)
     recent_activity = graphene.List(ActivityEventType, limit=graphene.Int(required=False))
 
     def resolve_habits(self, info, active_only=None):
@@ -219,6 +258,12 @@ class Query(graphene.ObjectType):
         if user.is_anonymous:
             return None
         return get_daily_quest_chain(user=user)
+
+    def resolve_weekly_boss_encounter(self, info):
+        user = info.context.user
+        if user.is_anonymous:
+            return None
+        return get_weekly_boss_encounter(user=user)
 
     def resolve_recent_activity(self, info, limit=20):
         user = info.context.user
@@ -423,6 +468,29 @@ class ClaimDailyQuestReward(graphene.Mutation):
         )
 
 
+class ClaimWeeklyBossReward(graphene.Mutation):
+    claimed = graphene.Boolean(required=True)
+    claim_reason = graphene.String(required=True)
+    awarded_xp = graphene.Int(required=True)
+    encounter = graphene.Field(WeeklyBossEncounterType)
+    profile = graphene.Field(PlayerProfileType)
+
+    @classmethod
+    def mutate(cls, root, info):
+        user = info.context.user
+        if user.is_anonymous:
+            raise Exception("Authentication required")
+
+        result = claim_weekly_boss_reward(user=user)
+        return cls(
+            claimed=result["claimed"],
+            claim_reason=result["claim_reason"],
+            awarded_xp=result["awarded_xp"],
+            encounter=result["encounter"],
+            profile=result["profile"],
+        )
+
+
 class ConsumeStreakFreeze(graphene.Mutation):
     consumed = graphene.Boolean(required=True)
     reason = graphene.String()
@@ -474,5 +542,6 @@ class Mutation(graphene.ObjectType):
     check_in_today = CheckInToday.Field()
     delete_habit = DeleteHabit.Field()
     claim_daily_quest_reward = ClaimDailyQuestReward.Field()
+    claim_weekly_boss_reward = ClaimWeeklyBossReward.Field()
     consume_streak_freeze = ConsumeStreakFreeze.Field()
     claim_recovery_quest_reward = ClaimRecoveryQuestReward.Field()

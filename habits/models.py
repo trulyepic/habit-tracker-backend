@@ -16,6 +16,7 @@ class PlayerProfile(models.Model):
     total_minutes_logged = models.PositiveIntegerField(default=0)
     achievements_unlocked = models.JSONField(default=dict, blank=True)
     daily_quest_claims = models.JSONField(default=dict, blank=True)
+    weekly_boss_claims = models.JSONField(default=dict, blank=True)
     streak_freeze_charges = models.PositiveSmallIntegerField(default=1)
     freeze_milestones_claimed = models.PositiveSmallIntegerField(default=0)
     recovery_quest_started_on = models.DateField(null=True, blank=True)

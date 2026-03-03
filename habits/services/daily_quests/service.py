@@ -7,6 +7,7 @@ from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 
 from habits.models import Habit, PlayerProfile
+from habits.services.bosses import resolve_daily_boss
 from habits.services.daily_quests.catalog import DAILY_QUEST_POOL, DAILY_QUEST_REWARD_XP
 from habits.services.daily_quests.types import DailyQuestContext, DailyQuestDef
 from habits.services.gamification import level_from_xp
@@ -117,6 +118,7 @@ def get_daily_quest_chain(*, user, profile: PlayerProfile | None = None, at_date
 
     return {
         "date_key": today_key,
+        "boss": resolve_daily_boss(seed=_seed_for_date(at_date)),
         "quests": quests,
         "completed_count": completed_count,
         "total_count": total_count,
