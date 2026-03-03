@@ -34,6 +34,9 @@ def test_resolve_title_state_reports_max_title_when_track_completed():
             "ten_hours": "2026-03-01T10:00:00+00:00",
             "iron_will": "2026-03-01T10:00:00+00:00",
             "centurion": "2026-03-01T10:00:00+00:00",
+            "raid_initiate": "2026-03-01T10:00:00+00:00",
+            "behemoth_bane": "2026-03-01T10:00:00+00:00",
+            "voidbreaker": "2026-03-01T10:00:00+00:00",
         },
     )
 

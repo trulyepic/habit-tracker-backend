@@ -23,6 +23,21 @@ from habits.services.game_balance import (
 from habits.services.streaks import maybe_grant_level_freezes, maybe_start_recovery_quest
 
 
+def _weekly_claim_counters(claims_map: dict | None) -> tuple[int, int, int]:
+    claims = claims_map or {}
+    wins = 0
+    hard_wins = 0
+    legendary_wins = 0
+    for _, value in claims.items():
+        wins += 1
+        if isinstance(value, dict):
+            if str(value.get("difficulty", "")).lower() == "hard":
+                hard_wins += 1
+            if str(value.get("rarity", "")).lower() == "legendary":
+                legendary_wins += 1
+    return wins, hard_wins, legendary_wins
+
+
 @dataclass(frozen=True)
 class XPAwardBreakdown:
     base: int
@@ -116,12 +131,16 @@ def apply_checkin_reward(
         profile.total_minutes_logged += checkin.minutes_spent
 
     now_iso = timezone.now().isoformat()
+    weekly_wins, hard_wins, legendary_wins = _weekly_claim_counters(profile.weekly_boss_claims)
     unlocked, newly_unlocked = evaluate_new_unlocks(
         unlocked=profile.achievements_unlocked or {},
         context=build_context(
             total_checkins=total_checkins_for_user,
             streak_days=current_streak,
             total_minutes_logged=profile.total_minutes_logged,
+            weekly_boss_wins=weekly_wins,
+            weekly_hard_boss_wins=hard_wins,
+            weekly_legendary_boss_wins=legendary_wins,
         ),
         now_iso=now_iso,
     )
@@ -178,12 +197,16 @@ def reconcile_profile_from_history(*, user) -> PlayerProfile:
             max_streak = s
 
     now_iso = timezone.now().isoformat()
+    weekly_wins, hard_wins, legendary_wins = _weekly_claim_counters(profile.weekly_boss_claims)
     unlocked, _ = evaluate_new_unlocks(
         unlocked=before_unlocked,
         context=build_context(
             total_checkins=total_checkins_for_user,
             streak_days=max_streak,
             total_minutes_logged=profile.total_minutes_logged,
+            weekly_boss_wins=weekly_wins,
+            weekly_hard_boss_wins=hard_wins,
+            weekly_legendary_boss_wins=legendary_wins,
         ),
         now_iso=now_iso,
     )
@@ -194,7 +217,6 @@ def reconcile_profile_from_history(*, user) -> PlayerProfile:
         profile.save(update_fields=["total_minutes_logged", "achievements_unlocked", "updated_at"])
 
     return profile
-
 
 
 

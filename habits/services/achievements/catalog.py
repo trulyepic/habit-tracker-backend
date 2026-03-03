@@ -36,4 +36,22 @@ ACHIEVEMENTS: dict[str, AchievementDef] = {
         bonus_xp_override=None,
         description="Complete 100 total check-ins across all habits.",
     ),
+    "raid_initiate": AchievementDef(
+        rarity="rare",
+        rule=lambda c: c.weekly_boss_wins >= 1,
+        bonus_xp_override=None,
+        description="Claim your first Weekly Boss reward.",
+    ),
+    "behemoth_bane": AchievementDef(
+        rarity="epic",
+        rule=lambda c: c.weekly_hard_boss_wins >= 1,
+        bonus_xp_override=None,
+        description="Defeat a hard Weekly Boss.",
+    ),
+    "voidbreaker": AchievementDef(
+        rarity="legendary",
+        rule=lambda c: c.weekly_legendary_boss_wins >= 2,
+        bonus_xp_override=None,
+        description="Defeat two legendary Weekly Bosses.",
+    ),
 }
