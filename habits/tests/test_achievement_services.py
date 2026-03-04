@@ -75,3 +75,20 @@ def test_total_bonus_xp_for_keys_uses_catalog_definitions():
     )
     actual = total_bonus_xp_for_keys(["first_step", "on_fire", "unknown_key"])
     assert actual == expected
+
+
+def test_evaluate_new_unlocks_unlocks_new_hours_tiers_at_thresholds():
+    unlocked, newly_unlocked = evaluate_new_unlocks(
+        unlocked={},
+        context=build_context(
+            total_checkins=20,
+            streak_days=5,
+            total_minutes_logged=6000,
+        ),
+        now_iso="2026-03-01T10:00:00+00:00",
+    )
+
+    assert "twenty_five_hours" in newly_unlocked
+    assert "hundred_hours" in newly_unlocked
+    assert unlocked["twenty_five_hours"] == "2026-03-01T10:00:00+00:00"
+    assert unlocked["hundred_hours"] == "2026-03-01T10:00:00+00:00"

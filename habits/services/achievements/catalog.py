@@ -24,6 +24,18 @@ ACHIEVEMENTS: dict[str, AchievementDef] = {
         bonus_xp_override=None,
         description="Log 10 hours total time invested.",
     ),
+    "twenty_five_hours": AchievementDef(
+        rarity="epic",
+        rule=lambda c: c.total_minutes_logged >= 1500,
+        bonus_xp_override=None,
+        description="Log 25 total hours across all habits.",
+    ),
+    "hundred_hours": AchievementDef(
+        rarity="legendary",
+        rule=lambda c: c.total_minutes_logged >= 6000,
+        bonus_xp_override=None,
+        description="Log 100 total hours across all habits.",
+    ),
     "iron_will": AchievementDef(
         rarity="epic",
         rule=lambda c: c.streak_days >= 30,

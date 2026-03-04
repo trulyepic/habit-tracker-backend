@@ -16,6 +16,18 @@ from habits.services.streaks import (
     maybe_start_recovery_quest,
     recovery_quest_status,
 )
+from habits.services.game_balance import CHECKIN_MINUTES_MAX, CHECKIN_MINUTES_MIN
+
+
+def _validate_minutes_spent(minutes_spent):
+    if minutes_spent is None:
+        raise Exception("minutesSpent is required for check-in.")
+    if not isinstance(minutes_spent, int):
+        raise Exception("minutesSpent must be an integer.")
+    if minutes_spent < CHECKIN_MINUTES_MIN or minutes_spent > CHECKIN_MINUTES_MAX:
+        raise Exception(
+            f"minutesSpent must be between {CHECKIN_MINUTES_MIN} and {CHECKIN_MINUTES_MAX}."
+        )
 
 
 class HabitType(DjangoObjectType):
@@ -358,7 +370,7 @@ class CheckInToday(graphene.Mutation):
     class Arguments:
         habit_id = graphene.ID(required=True)
         date = graphene.Date(required=False)
-        minutes_spent = graphene.Int(required=False)
+        minutes_spent = graphene.Int(required=True)
 
     checkin = graphene.Field(CheckInType)
     created = graphene.Boolean(required=True)
@@ -370,6 +382,7 @@ class CheckInToday(graphene.Mutation):
         user = info.context.user
         if user.is_anonymous:
             raise Exception("Authentication required")
+        _validate_minutes_spent(minutes_spent)
 
         habit = Habit.objects.get(pk=habit_id, owner=user)
         checkin_date = date or timezone.localdate()

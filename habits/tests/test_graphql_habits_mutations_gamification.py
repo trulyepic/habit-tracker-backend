@@ -38,7 +38,7 @@ def test_check_in_today_awards_xp_and_minutes(client, user):
     today = timezone.localdate()
 
     query = """
-      mutation($habitId: ID!, $date: Date, $m: Int) {
+      mutation($habitId: ID!, $date: Date, $m: Int!) {
         checkInToday(habitId: $habitId, date: $date, minutesSpent: $m) {
           created
           checkin { id date minutesSpent xpAwarded }
@@ -63,7 +63,7 @@ def test_check_in_today_duplicate_does_not_double_award_xp(client, user):
     today = timezone.localdate()
 
     query = """
-      mutation($habitId: ID!, $date: Date, $m: Int) {
+      mutation($habitId: ID!, $date: Date, $m: Int!) {
         checkInToday(habitId: $habitId, date: $date, minutesSpent: $m) {
           created
           profile { totalXp totalMinutesLogged }
@@ -101,7 +101,7 @@ def test_check_in_today_upgrades_freeze_protected_entry(client, user):
     assert freeze["consumed"] is True
 
     checkin_mutation = """
-      mutation($habitId: ID!, $m: Int) {
+      mutation($habitId: ID!, $m: Int!) {
         checkInToday(habitId: $habitId, minutesSpent: $m) {
           created
           checkin { xpAwarded }
@@ -115,6 +115,50 @@ def test_check_in_today_upgrades_freeze_protected_entry(client, user):
     assert upgraded["created"] is True
     assert upgraded["checkin"]["xpAwarded"] > 0
     assert today_checkin.used_freeze is False
+
+
+def test_check_in_today_requires_minutes(client, user):
+    assert client.login(username="u1", password="pass12345")
+    habit = Habit.objects.create(owner=user, name="MinutesRequired")
+
+    query = """
+      mutation($habitId: ID!) {
+        checkInToday(habitId: $habitId) {
+          created
+        }
+      }
+    """
+    response = client.post(
+        "/graphql/",
+        data={"query": query, "variables": {"habitId": str(habit.id)}},
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+    body = json.loads(response.content)
+    assert "errors" in body
+    assert "minutesSpent" in body["errors"][0]["message"]
+
+
+def test_check_in_today_rejects_out_of_range_minutes(client, user):
+    assert client.login(username="u1", password="pass12345")
+    habit = Habit.objects.create(owner=user, name="MinutesRange")
+
+    query = """
+      mutation($habitId: ID!, $m: Int!) {
+        checkInToday(habitId: $habitId, minutesSpent: $m) {
+          created
+        }
+      }
+    """
+    response = client.post(
+        "/graphql/",
+        data={"query": query, "variables": {"habitId": str(habit.id), "m": 2000}},
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    body = json.loads(response.content)
+    assert "errors" in body
+    assert "between" in body["errors"][0]["message"]
 
 
 def test_toggle_habit_active_does_not_delete_habit_or_checkins(client, user):
